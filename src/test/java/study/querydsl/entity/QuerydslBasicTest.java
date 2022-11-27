@@ -1,7 +1,12 @@
 package study.querydsl.entity;
 
+import com.querydsl.core.BooleanBuilder;
 import com.querydsl.core.QueryResults;
 import com.querydsl.core.Tuple;
+import com.querydsl.core.types.Predicate;
+import com.querydsl.core.types.ProjectionRole;
+import com.querydsl.core.types.Projections;
+import com.querydsl.core.types.dsl.BooleanExpression;
 import com.querydsl.core.types.dsl.CaseBuilder;
 import com.querydsl.core.types.dsl.Expressions;
 import com.querydsl.jpa.JPAExpressions;
@@ -10,6 +15,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.transaction.annotation.Transactional;
+import study.querydsl.dto.MemberDto;
+import study.querydsl.dto.QMemberDto;
 
 import javax.persistence.EntityManager;
 import javax.persistence.EntityManagerFactory;
@@ -367,5 +374,149 @@ public class QuerydslBasicTest {
                 .from(member)
                 .where(member.username.eq("member1"))
                 .fetchOne();
+    }
+
+    @Test
+    public void simpleProjection() {
+        List<String> result = queryFactory
+                .select(member.username)
+                .from(member)
+                .fetch();
+    }
+
+    @Test
+    public void tupleProjection() {
+        List<Tuple> result = queryFactory
+                .select(member.username, member.age)
+                .from(member)
+                .fetch();
+    }
+
+    @Test
+    public void findDtoByJPQL() {
+        List<MemberDto> resultList = em.createQuery("select new study.querydsl.dto.MemberDto(m.username, m.age) from Member m", MemberDto.class)
+                .getResultList();
+
+    }
+
+    /**Setter로 값 넣기*/
+    @Test
+    public void findDtoBySetter() {
+        queryFactory
+                .select(Projections.bean(MemberDto.class,
+                        member.username,
+                        member.age))
+                .from(member)
+                .fetch();
+    }
+
+    /**필드에 바로 넣기
+     * 컬럼 명과 다를경우 as추가*/
+    @Test
+    public void findDtoByField() {
+        queryFactory
+                .select(Projections.fields(MemberDto.class,
+                        member.username.as("name"),
+                        member.age))
+                .from(member)
+                .fetch();
+    }
+
+    /**생성자로 넣기*/
+    @Test
+    public void findDtoByConstructor() {
+        queryFactory
+                .select(Projections.constructor(MemberDto.class,
+                        member.username,
+                        member.age))
+                .from(member)
+                .fetch();
+    }
+
+    /**
+     * DTO에 QueryProjection 어노테이션을 선언해서 Q파일 생성하고
+     * 컴파일 오류에서 검증할 수 있다.
+     */
+    @Test
+    public void findDtoByQueryProjection() {
+        queryFactory
+                .select(new QMemberDto(member.username, member.age))
+                .from(member)
+                .fetch();
+    }
+
+    @Test
+    public void dynamicQuery_BooleanBuilder() {
+        String usernameParam = "member1";
+        Integer ageParam = 10;
+
+        List<Member> result = searchMember1(usernameParam, ageParam);
+        assertThat(result.size()).isEqualTo(1);
+    }
+
+    private List<Member> searchMember1(String usernameCond, Integer ageCond) {
+
+        BooleanBuilder booleanBuilder = new BooleanBuilder();
+        if (usernameCond != null) {
+            booleanBuilder.and(member.username.eq(usernameCond));
+        }
+
+        if (ageCond != null) {
+            booleanBuilder.and(member.age.eq(ageCond));
+        }
+
+        return queryFactory
+                .selectFrom(member)
+                .where(booleanBuilder)
+                .fetch();
+    }
+
+    /**
+     * 동적 쿼리 WhereParam 방식
+     */
+    @Test
+    public void dynamicQuery_WhereParam() {
+
+        String usernameParam = "member1";
+        Integer ageParam = 10;
+
+        List<Member> result = searchMember2(usernameParam, ageParam);
+        assertThat(result.size()).isEqualTo(1);
+    }
+
+    /**
+     * 재활용이 가능하게 코드를 짤 수 있다.
+     * 명시적으로 표시가 가능해서 코드 분석이 쉽다.
+     * @param usernameCond
+     * @param ageCond
+     * @return
+     */
+    private List<Member> searchMember2(String usernameCond, Integer ageCond) {
+        return queryFactory
+                .selectFrom(member)
+                .where(usernameEq(usernameCond), ageEq(ageCond))
+                .fetch();
+    }
+
+    private BooleanExpression  usernameEq(String usernameCond) {
+        return usernameCond != null ? member.username.eq(usernameCond) : null;
+    }
+
+    private BooleanExpression ageEq(Integer ageCond) {
+        return ageCond != null ? member.age.eq(ageCond) : null;
+    }
+
+    private BooleanExpression allEq(String usernameCond, Integer ageCond) {
+       return usernameEq(usernameCond).and(ageEq(ageCond));
+    }
+
+    @Test
+    public void sqlFunction() {
+        queryFactory
+                .select(Expressions.stringTemplate(
+                        "function('replace', {0},{1},{2})",
+                        member.username, "member", "M"))
+                .from(member)
+                .fetch();
     }
 }
